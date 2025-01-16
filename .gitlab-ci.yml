@@ -1,0 +1,71 @@
+stages:
+  - format
+  - eslint
+  - build
+  - deploy
+
+image: node:22.11.0
+
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - node_modules/
+
+format:
+  stage: format
+  script:
+    - yarn
+    - yarn format
+    - git checkout -B $CI_COMMIT_REF_NAME # Checkout the branch explicitly
+    - |
+      if ! git diff --exit-code; then
+        git config --global user.email "ci@git.cpe.kmutt.ac.th"
+        git config --global user.name "CI Bot - [ModElite]"
+        git add .
+        git commit -m "Format Code"
+        git push https://gitlab-ci-token:$CI_ACCESSTOKEN@$CI_SERVER_HOST/$CI_PROJECT_PATH.git $CI_COMMIT_REF_NAME
+      else
+        echo "No changes For Prettier Format"
+      fi
+
+eslint:
+  stage: eslint
+  dependencies:
+    - format
+  needs:
+    - format
+  cache:
+    policy: pull
+  script:
+    - if [ ! -d "node_modules" ]; then yarn install; fi
+    - yarn
+    - yarn format
+    - yarn lint
+
+build:
+  stage: build
+  dependencies:
+    - eslint
+  needs:
+    - eslint
+  cache:
+    policy: pull
+  script:
+    - if [ ! -d "node_modules" ]; then yarn install; fi
+    - yarn build
+
+deploy:
+  stage: deploy
+  only:
+    - main
+  dependencies:
+    - build
+  needs:
+    - build
+  cache:
+    policy: pull
+  script:
+    - yarn global add vercel
+    - vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+    - vercel build --prod --token=$VERCEL_TOKEN
+    - vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
